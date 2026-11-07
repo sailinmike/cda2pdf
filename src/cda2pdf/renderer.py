@@ -1,4 +1,4 @@
-# Copyright (C) 2026 cda2pdf contributors
+# Copyright (C) 2026 Mint Medical PLLC
 #
 # This file is part of cda2pdf.
 #
@@ -61,7 +61,9 @@ def ensure_native_renderer() -> str:
     cmd = [
         "clang",
         "-fobjc-arc",
-        "-Wno-deprecated-declarations",
+        # macOS 11 is the floor: WKWebView's paginated print support
+        # (-printOperationWithPrintInfo:) was introduced there.
+        "-mmacosx-version-min=11.0",
         "-framework",
         "Cocoa",
         "-framework",

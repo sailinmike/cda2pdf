@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 cda2pdf contributors
+ * Copyright (C) 2026 Mint Medical PLLC
  *
  * This file is part of cda2pdf.
  *
@@ -23,84 +23,250 @@
 #import <WebKit/WebKit.h>
 #import <PDFKit/PDFKit.h>
 
-@interface LoadDelegate : NSObject <WebFrameLoadDelegate>
+/*
+ * Receives the completion callback from an asynchronous print operation.
+ *
+ * WKWebView's synchronous -[NSPrintOperation runOperation] deadlocks here:
+ * pagination needs replies from the web content process, which arrive on the
+ * main run loop that runOperation is blocking. Driving the operation through
+ * runOperationModalForWindow: and spinning the run loop ourselves keeps the
+ * main loop live so those replies can be delivered.
+ */
+@interface PrintCompletion : NSObject
 @property (nonatomic, assign) BOOL done;
+@property (nonatomic, assign) BOOL success;
 @end
 
-@implementation LoadDelegate
-- (void)webView:(WebView *)sender didFinishLoadForFrame:(WebFrame *)frame {
-    if (frame == [sender mainFrame]) {
-        self.done = YES;
-    }
-}
-- (void)webView:(WebView *)sender didFailLoadWithError:(NSError *)error forFrame:(WebFrame *)frame {
-    NSLog(@"Failed load: %@", error);
+@implementation PrintCompletion
+- (void)printOperationDidRun:(NSPrintOperation *)printOperation
+                     success:(BOOL)success
+                 contextInfo:(void *)contextInfo {
+    self.success = success;
     self.done = YES;
 }
 @end
 
 /*
- * Blocks every network request made while rendering.
- *
- * Clinical documents are untrusted input. A CDA narrative, a vendor
- * stylesheet, or a user-supplied stylesheet can emit a reference to a remote
- * resource -- for example <img src="https://example.com/x.gif?mrn=...">.
- * Without this delegate WebKit would dutifully fetch it, transmitting patient
- * identifiers to a third party as a side effect of rendering a PDF.
- *
- * Only local resources are permitted: file: URLs, plus the about: and data:
- * schemes WebKit uses internally. Everything else is dropped by returning nil
- * from willSendRequest, and reported on stderr so the omission is visible
- * rather than silent.
+ * Navigation delegate: signals load completion and refuses any navigation
+ * that is not to a local file.
  */
-@interface ResourceGuard : NSObject <WebResourceLoadDelegate>
-@property (nonatomic, assign) NSUInteger blockedCount;
+@interface LoadDelegate : NSObject <WKNavigationDelegate>
+@property (nonatomic, assign) BOOL done;
+@property (nonatomic, assign) BOOL failed;
 @end
 
-@implementation ResourceGuard
-- (NSURLRequest *)webView:(WebView *)sender
-                 resource:(id)identifier
-          willSendRequest:(NSURLRequest *)request
-         redirectResponse:(NSURLResponse *)redirectResponse
-           fromDataSource:(WebDataSource *)dataSource {
-    NSString *scheme = [[[request URL] scheme] lowercaseString];
+@implementation LoadDelegate
+
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    self.done = YES;
+}
+
+- (void)webView:(WKWebView *)webView
+        didFailNavigation:(WKNavigation *)navigation
+                withError:(NSError *)error {
+    fprintf(stderr, "cda2pdf: navigation failed: %s\n",
+            [[error localizedDescription] UTF8String]);
+    self.failed = YES;
+    self.done = YES;
+}
+
+- (void)webView:(WKWebView *)webView
+        didFailProvisionalNavigation:(WKNavigation *)navigation
+                           withError:(NSError *)error {
+    fprintf(stderr, "cda2pdf: provisional navigation failed: %s\n",
+            [[error localizedDescription] UTF8String]);
+    self.failed = YES;
+    self.done = YES;
+}
+
+/*
+ * Second line of defense. The content rule list (below) blocks subresource
+ * loads; this blocks frame navigations, including anything an iframe in a
+ * clinical document might attempt.
+ */
+- (void)webView:(WKWebView *)webView
+        decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
+                        decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    NSString *scheme = [[[[navigationAction request] URL] scheme] lowercaseString];
     if (scheme == nil
         || [scheme isEqualToString:@"file"]
         || [scheme isEqualToString:@"about"]
         || [scheme isEqualToString:@"data"]) {
-        return request;
+        decisionHandler(WKNavigationActionPolicyAllow);
+        return;
     }
-    self.blockedCount += 1;
-    fprintf(stderr,
-            "cda2pdf: blocked non-local resource request during render: %s\n",
-            [[[request URL] absoluteString] UTF8String]);
-    return nil;
+    fprintf(stderr, "cda2pdf: blocked non-local navigation during render: %s\n",
+            [[[[navigationAction request] URL] absoluteString] UTF8String]);
+    decisionHandler(WKNavigationActionPolicyCancel);
 }
+
 @end
 
-BOOL renderHTMLToPDF(NSString *htmlPath, NSString *pdfPath) {
+/*
+ * Builds the content rule list that prevents rendering from reaching the
+ * network.
+ *
+ * Clinical documents are untrusted input. A CDA narrative, a vendor
+ * stylesheet, or a user-supplied stylesheet can reference a remote resource --
+ * for example <img src="https://example.com/x.gif?mrn=...">. WebKit would
+ * otherwise fetch it, transmitting patient identifiers to a third party as a
+ * side effect of rendering a PDF.
+ *
+ * WKWebView, unlike the legacy WebView it replaced, offers no delegate
+ * callback for subresource loads, so blocking is expressed declaratively: deny
+ * everything, then re-allow only the local schemes. Rules are evaluated in
+ * order and "ignore-previous-rules" undoes the preceding block.
+ *
+ * Returns nil on failure, which the caller treats as fatal -- rendering
+ * without the guard in place is not an acceptable fallback.
+ */
+static WKContentRuleList *BuildBlockAllNetworkRuleList(void) {
+    NSString *rules = @"["
+        "{\"trigger\":{\"url-filter\":\".*\"},\"action\":{\"type\":\"block\"}},"
+        "{\"trigger\":{\"url-filter\":\"^file:\"},\"action\":{\"type\":\"ignore-previous-rules\"}},"
+        "{\"trigger\":{\"url-filter\":\"^data:\"},\"action\":{\"type\":\"ignore-previous-rules\"}},"
+        "{\"trigger\":{\"url-filter\":\"^about:\"},\"action\":{\"type\":\"ignore-previous-rules\"}}"
+        "]";
+
+    __block WKContentRuleList *compiled = nil;
+    __block BOOL finished = NO;
+
+    [[WKContentRuleListStore defaultStore]
+        compileContentRuleListForIdentifier:@"cda2pdf-block-all-network"
+                     encodedContentRuleList:rules
+                          completionHandler:^(WKContentRuleList *list, NSError *error) {
+        if (error) {
+            fprintf(stderr, "cda2pdf: failed to compile network block rules: %s\n",
+                    [[error localizedDescription] UTF8String]);
+        }
+        compiled = list;
+        finished = YES;
+    }];
+
+    NSDate *limit = [NSDate dateWithTimeIntervalSinceNow:20.0];
+    while (!finished && [[NSDate date] compare:limit] == NSOrderedAscending) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+    }
+    return compiled;
+}
+
+/*
+ * Reports non-local resource references found in the HTML about to be
+ * rendered.
+ *
+ * The content rule list blocks these silently, so this scan exists purely for
+ * visibility: an operator should be able to see that a document asked to
+ * reach the network, even though the request never left the machine.
+ */
+static void WarnAboutRemoteReferences(NSString *htmlPath) {
+    NSString *html = [NSString stringWithContentsOfFile:htmlPath
+                                               encoding:NSUTF8StringEncoding
+                                                  error:nil];
+    if (!html) {
+        return;
+    }
+    NSRegularExpression *re =
+        [NSRegularExpression regularExpressionWithPattern:
+            @"(?:src|href)\\s*=\\s*[\"']\\s*((?:https?:|ftp:)//[^\"']+)"
+                                                  options:NSRegularExpressionCaseInsensitive
+                                                    error:nil];
+    if (!re) {
+        return;
+    }
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
+    [re enumerateMatchesInString:html
+                         options:0
+                           range:NSMakeRange(0, [html length])
+                      usingBlock:^(NSTextCheckingResult *m, NSMatchingFlags flags, BOOL *stop) {
+        if ([m numberOfRanges] < 2) {
+            return;
+        }
+        NSString *url = [html substringWithRange:[m rangeAtIndex:1]];
+        if ([seen containsObject:url]) {
+            return;
+        }
+        [seen addObject:url];
+        fprintf(stderr,
+                "cda2pdf: blocked non-local resource reference in document: %s\n",
+                [url UTF8String]);
+    }];
+}
+
+BOOL renderHTMLToPDF(NSString *htmlPath, NSString *pdfPath, WKContentRuleList *blockList) {
+    WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+
+    // Ephemeral data store: WebKit keeps no cache, cookies or local storage on
+    // disk, so no fragment of a clinical document outlives the process here.
+    config.websiteDataStore = [WKWebsiteDataStore nonPersistentDataStore];
+
+    if (blockList) {
+        [[config userContentController] addContentRuleList:blockList];
+    }
+
+    // Clinical documents are untrusted input; no scripting.
+    config.defaultWebpagePreferences.allowsContentJavaScript = NO;
+    config.preferences.javaScriptCanOpenWindowsAutomatically = NO;
+    config.suppressesIncrementalRendering = YES;
+
     NSRect rect = NSMakeRect(0, 0, 820, 1050);
-    WebView *webView = [[WebView alloc] initWithFrame:rect frameName:nil groupName:nil];
+    WKWebView *webView = [[WKWebView alloc] initWithFrame:rect configuration:config];
     LoadDelegate *del = [[LoadDelegate alloc] init];
-    [webView setFrameLoadDelegate:del];
-    // Prevent rendering from reaching the network; see ResourceGuard above.
-    ResourceGuard *guard = [[ResourceGuard alloc] init];
-    [webView setResourceLoadDelegate:guard];
-    [[webView preferences] setShouldPrintBackgrounds:YES];
-    [[webView preferences] setLoadsImagesAutomatically:YES];
-    // Clinical documents are untrusted input; no scripting or plugins.
-    [[webView preferences] setJavaScriptEnabled:NO];
-    [[webView preferences] setPlugInsEnabled:NO];
-    [[webView preferences] setJavaEnabled:NO];
+    [webView setNavigationDelegate:del];
+
+    /*
+     * WKWebView renders in a separate content process, which stays idle while
+     * the view is detached. Its print operation then blocks forever waiting
+     * for content that is never drawn. Hosting the view in an off-screen
+     * window gets it into a window hierarchy so rendering actually proceeds.
+     * The window is positioned far off-screen and never ordered front, so
+     * nothing appears on the user's display.
+     */
+    NSWindow *offscreen =
+        [[NSWindow alloc] initWithContentRect:rect
+                                    styleMask:NSWindowStyleMaskBorderless
+                                      backing:NSBackingStoreBuffered
+                                        defer:NO];
+    /*
+     * NSWindow defaults to releasedWhenClosed for programmatically created
+     * windows. Under ARC that double-frees: -close releases the window while
+     * ARC still holds its own reference, which crashes on the second document
+     * in a multi-document run. Opt out and let ARC own the lifetime.
+     */
+    [offscreen setReleasedWhenClosed:NO];
+    [offscreen setFrameOrigin:NSMakePoint(-20000, -20000)];
+    [offscreen setContentView:webView];
+    [offscreen orderBack:nil];
+
+    WarnAboutRemoteReferences(htmlPath);
 
     NSURL *url = [NSURL fileURLWithPath:htmlPath];
-    [[webView mainFrame] loadRequest:[NSURLRequest requestWithURL:url]];
+    /*
+     * Read access is granted from the filesystem root because a package's
+     * stylesheet and images routinely live outside the temporary directory
+     * holding the generated HTML -- typically in the user's own XDM export.
+     * This is a local CLI tool already running with the user's permissions, so
+     * it grants no authority the invoking user lacks. It is safe in
+     * combination with the two controls above: scripting is disabled, so a
+     * document cannot read a local file programmatically, and all network
+     * egress is blocked, so nothing it does load can be exfiltrated.
+     */
+    [webView loadFileURL:url allowingReadAccessToURL:[NSURL fileURLWithPath:@"/"]];
 
     NSDate *timeout = [NSDate dateWithTimeIntervalSinceNow:25.0];
     while (!del.done && [[NSDate date] compare:timeout] == NSOrderedAscending) {
-        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
     }
-    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.15]];
+    if (!del.done) {
+        fprintf(stderr, "cda2pdf: timed out loading %s\n", [htmlPath UTF8String]);
+        return NO;
+    }
+    if (del.failed) {
+        return NO;
+    }
+    // Let layout and image decoding settle before paginating.
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.35]];
 
     NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithDictionary:[[NSPrintInfo sharedPrintInfo] dictionary]];
     dict[NSPrintJobDisposition] = NSPrintSaveJob;
@@ -112,15 +278,46 @@ BOOL renderHTMLToPDF(NSString *htmlPath, NSString *pdfPath) {
     [printInfo setBottomMargin:34];
     [printInfo setLeftMargin:28];
     [printInfo setRightMargin:28];
-    [printInfo setHorizontalPagination:NSFitPagination];
-    [printInfo setVerticalPagination:NSAutoPagination];
+    [printInfo setHorizontalPagination:NSPrintingPaginationModeFit];
+    [printInfo setVerticalPagination:NSPrintingPaginationModeAutomatic];
     [printInfo setVerticallyCentered:NO];
 
-    NSView *docView = [[[webView mainFrame] frameView] documentView];
-    NSPrintOperation *op = [NSPrintOperation printOperationWithView:docView printInfo:printInfo];
+    /*
+     * WKWebView paginates itself through its own print operation; the legacy
+     * approach of printing the frame's document view does not apply, because
+     * the page content lives in a separate process.
+     */
+    NSPrintOperation *op = [webView printOperationWithPrintInfo:printInfo];
     [op setShowsPrintPanel:NO];
     [op setShowsProgressPanel:NO];
-    return [op runOperation];
+    // The operation's view must be sized to the printable area or WebKit
+    // paginates against the on-screen frame and clips the right edge.
+    [[op view] setFrame:NSMakeRect(0, 0,
+                                   612 - 28 - 28,
+                                   792 - 28 - 34)];
+
+    PrintCompletion *completion = [[PrintCompletion alloc] init];
+    [op runOperationModalForWindow:offscreen
+                          delegate:completion
+                    didRunSelector:@selector(printOperationDidRun:success:contextInfo:)
+                       contextInfo:NULL];
+
+    NSDate *printLimit = [NSDate dateWithTimeIntervalSinceNow:120.0];
+    while (!completion.done && [[NSDate date] compare:printLimit] == NSOrderedAscending) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+    }
+    if (!completion.done) {
+        fprintf(stderr, "cda2pdf: timed out paginating %s\n", [htmlPath UTF8String]);
+    }
+    BOOL ok = completion.done && completion.success;
+
+    // Tear down the off-screen host window and its content process.
+    [webView setNavigationDelegate:nil];
+    [offscreen setContentView:nil];
+    [offscreen close];
+
+    return ok;
 }
 
 int main(int argc, const char * argv[]) {
@@ -152,6 +349,18 @@ int main(int argc, const char * argv[]) {
         NSString *docSubject = manifest[@"subject"] ?: @"HL7 CDA / IHE XDM Clinical Document Extraction";
         NSArray<NSDictionary *> *parts = manifest[@"parts"];
 
+        /*
+         * Compile the network block list once, up front. If it cannot be
+         * built we abort rather than render: producing a PDF without the
+         * guard in place could silently transmit patient data.
+         */
+        WKContentRuleList *blockList = BuildBlockAllNetworkRuleList();
+        if (!blockList) {
+            fprintf(stderr,
+                    "cda2pdf: refusing to render without the network block list\n");
+            return 4;
+        }
+
         NSMutableArray<PDFDocument *> *subDocs = [NSMutableArray array];
         NSMutableArray<NSNumber *> *startPages = [NSMutableArray array];
         NSMutableArray<NSString *> *pageSectionLabels = [NSMutableArray array];
@@ -164,7 +373,7 @@ int main(int argc, const char * argv[]) {
             NSString *shortLabel = part[@"short_label"] ?: @"Document";
             NSString *bookmarkLabel = part[@"bookmark_label"] ?: shortLabel;
 
-            if (!renderHTMLToPDF(hPath, pPath)) {
+            if (!renderHTMLToPDF(hPath, pPath, blockList)) {
                 fprintf(stderr, "Failed rendering HTML file: %s\n", [hPath UTF8String]);
                 return 2;
             }

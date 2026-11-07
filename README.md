@@ -17,7 +17,8 @@ Convert **HL7 CDA R2 XML** clinical documents, **IHE XDM** folders, or **XDM `.z
   - Appends an **XML Header & Coded Clinical Entries Metadata** section to each document containing machine-readable codes (RxNorm, NDC, First DataBank NDDF, SNOMED CT, ICD-10-CM, ICD-9-CM, LOINC, CPT), quantities and doses, narrative references, and author provenance timestamps.
   - Extracts and renders `INDEX.HTM`, `IHE_XDM/.../METADATA.XML` (`RegistryPackage`, `ExtrinsicObject` entries, HL7 PID fields, SHA-1 hashes, byte sizes, `HasMember` associations), and `README.TXT` when converting an XDM package.
 - **Dynamic patient and encounter parsing:** extracts patient name, date of birth, gender, patient IDs, authoring organization/device, and encounter dates and locations directly from the CDA XML.
-- **Native macOS rendering, stamping and bookmarks:** uses macOS `WebKit` + `PDFKit` to paginate each document onto US Letter pages, stamp every page with per-document and global page counters, and build clickable PDF sidebar bookmarks (`PDFOutline`).
+- **Native macOS rendering, stamping and bookmarks:** uses macOS `WebKit` (`WKWebView`) + `PDFKit` to paginate each document onto US Letter pages, stamp every page with per-document and global page counters, and build clickable PDF sidebar bookmarks (`PDFOutline`).
+- **Sandboxed rendering:** documents are rendered with scripting disabled, an ephemeral (non-persistent) WebKit data store, and a content rule list that blocks all network egress.
 
 ---
 
@@ -25,7 +26,7 @@ Convert **HL7 CDA R2 XML** clinical documents, **IHE XDM** folders, or **XDM `.z
 
 | Requirement | Notes |
 |---|---|
-| **macOS** | Required. Rendering uses the system `WebKit` and `PDFKit` frameworks. |
+| **macOS 11 (Big Sur) or later** | Required. Rendering uses the system `WebKit` (`WKWebView`) and `PDFKit` frameworks. macOS 11 is the minimum because `WKWebView`'s paginated print support was introduced there. |
 | **Xcode Command Line Tools** | Provides `clang`, used to compile the native renderer on first run. Install with `xcode-select --install`. |
 | **Python 3.9+** | |
 | **`xsltproc`** | Ships with macOS by default. |
@@ -157,6 +158,7 @@ This tool processes protected health information. A few notes:
 
 - **Nothing is transmitted.** All parsing and rendering happen locally. The package makes no network calls — no telemetry, no analytics, no update check.
 - **Rendering is network-isolated.** Clinical documents are treated as untrusted input. A document or a third-party stylesheet can reference a remote resource, and fetching it would leak data to that host as a side effect of rendering. The renderer therefore blocks every non-local resource request (only `file:`, `data:` and `about:` are allowed) and reports each blocked URL on stderr. JavaScript, plugins and Java are disabled during rendering.
+- **Run only on a PHI-certified machine.** This software writes unencrypted PHI to local disk. Run it only on a system your organization has authorized and secured for handling PHI, with full-disk encryption enabled. See [section 4a of the disclaimer](DISCLAIMER.md).
 - **Output is unredacted by design.** The generated PDF contains the complete record, including identifiers. Treat it with the same care as the source export.
 - **Intermediate files.** `--keep-html` writes unencrypted intermediate HTML and per-document PDFs to the directory you specify. Without that flag, intermediates go to a temporary directory that is deleted when conversion finishes.
 - **Do not commit patient data to this repository.** The test suite uses a synthetic fixture. To test against a real export, set `CDA2PDF_TEST_XDM` to a path outside the repo:
@@ -169,11 +171,11 @@ This tool processes protected health information. A few notes:
 
 ## Licensing
 
-`cda2pdf` is dual-licensed.
+`cda2pdf` is copyright (C) 2026 Mint Medical PLLC and is dual-licensed.
 
 **Open-source / non-commercial — GNU AGPL v3.0.** You may use, modify and redistribute this software under the terms of the [GNU Affero General Public License v3.0](LICENSE). Note that the AGPL's network clause (section 13) applies: if you run a modified version as a network service, you must offer its source to users of that service.
 
-**Commercial.** For proprietary commercial use without the AGPL's source-disclosure obligations, a separate commercial license is required. Contact **hello@minthealthvt.com** for pricing.
+**Commercial.** For proprietary commercial use without the AGPL's source-disclosure obligations, a separate commercial license is required from Mint Medical PLLC. Contact **hello@minthealthvt.com** for pricing.
 
 Contributions are accepted under the terms described in [CONTRIBUTING.md](CONTRIBUTING.md), which includes a contributor license agreement enabling the dual-licensing model above.
 

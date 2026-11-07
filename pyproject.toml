@@ -9,6 +9,8 @@ description = "Convert HL7 CDA R2 XML files and IHE XDM clinical packages into u
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Mint Medical PLLC", email = "hello@minthealthvt.com" }]
+maintainers = [{ name = "Mint Medical PLLC", email = "hello@minthealthvt.com" }]
 keywords = ["hl7", "cda", "ccd", "ccda", "ihe", "xdm", "pdf", "healthcare", "interoperability"]
 dependencies = [
     "beautifulsoup4>=4.11.0",
@@ -21,6 +23,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Operating System :: MacOS :: MacOS X",
+    "Environment :: MacOS X :: Cocoa",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",

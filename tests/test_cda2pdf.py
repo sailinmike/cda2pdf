@@ -1,4 +1,4 @@
-# Copyright (C) 2026 cda2pdf contributors
+# Copyright (C) 2026 Mint Medical PLLC
 #
 # This file is part of cda2pdf.
 #

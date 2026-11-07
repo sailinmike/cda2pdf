@@ -2,7 +2,7 @@
 <!--
   cda-default.xsl - Default HL7 CDA R2 rendering stylesheet for cda2pdf.
 
-  Copyright (C) 2026 cda2pdf contributors
+  Copyright (C) 2026 Mint Medical PLLC
   SPDX-License-Identifier: AGPL-3.0-or-later
 
   This is an ORIGINAL, CLEAN-ROOM implementation written against the published

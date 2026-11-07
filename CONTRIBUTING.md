@@ -6,13 +6,13 @@ Thanks for your interest in contributing.
 
 ## Contributor License Agreement (please read before opening a pull request)
 
-`cda2pdf` is **dual-licensed**: under the GNU AGPL v3.0 for open-source and non-commercial use, and under a separate commercial license for proprietary use. For that model to work, the project maintainer must hold sufficient rights in all contributed code to relicense it commercially.
+`cda2pdf` is **dual-licensed**: under the GNU AGPL v3.0 for open-source and non-commercial use, and under a separate commercial license for proprietary use. For that model to work, **Mint Medical PLLC** (the "Owner") must hold sufficient rights in all contributed code to relicense it commercially.
 
 **By submitting a pull request, issue patch, or any other contribution to this project, you agree to the following:**
 
-1. **Grant of copyright license.** You grant the project maintainer a perpetual, worldwide, non-exclusive, royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly display, publicly perform, sublicense and distribute your contribution and such derivative works, **under any license terms, including proprietary commercial terms**.
+1. **Grant of copyright license.** You grant Mint Medical PLLC a perpetual, worldwide, non-exclusive, royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly display, publicly perform, sublicense and distribute your contribution and such derivative works, **under any license terms, including proprietary commercial terms**.
 
-2. **Grant of patent license.** You grant the project maintainer and recipients of software distributed by the project a perpetual, worldwide, non-exclusive, royalty-free, irrevocable patent license to make, use, sell, offer to sell, import and otherwise transfer your contribution, covering those patent claims licensable by you that are necessarily infringed by your contribution alone or by its combination with the project.
+2. **Grant of patent license.** You grant Mint Medical PLLC and recipients of software distributed by the project a perpetual, worldwide, non-exclusive, royalty-free, irrevocable patent license to make, use, sell, offer to sell, import and otherwise transfer your contribution, covering those patent claims licensable by you that are necessarily infringed by your contribution alone or by its combination with the project.
 
 3. **You retain your copyright.** This agreement does not transfer ownership. You keep the copyright in your contribution and remain free to use it however you wish elsewhere.
 
