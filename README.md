@@ -6,6 +6,8 @@ Convert **HL7 CDA R2 XML** clinical documents, **IHE XDM** folders, or **XDM `.z
 
 > **No warranty.** This software is provided "as is", without warranty of any kind, express or implied. It is **not** a medical device and is **not** certified for clinical decision-making. You are responsible for validating its output before relying on it. See sections 15–17 of the [LICENSE](LICENSE).
 
+> **Clinical and privacy notice.** Before using this software on real patient data, read the [Healthcare Data & Clinical Use Disclaimer](DISCLAIMER.md). It covers known rendering limitations that affect clinical fidelity, and exactly what patient data is written to local disk.
+
 ---
 
 ## Features
@@ -153,7 +155,8 @@ If you pass your own stylesheet with `--xsl`, emit these two container IDs so th
 
 This tool processes protected health information. A few notes:
 
-- **Nothing is transmitted.** All parsing and rendering happen locally. The package makes no network calls.
+- **Nothing is transmitted.** All parsing and rendering happen locally. The package makes no network calls — no telemetry, no analytics, no update check.
+- **Rendering is network-isolated.** Clinical documents are treated as untrusted input. A document or a third-party stylesheet can reference a remote resource, and fetching it would leak data to that host as a side effect of rendering. The renderer therefore blocks every non-local resource request (only `file:`, `data:` and `about:` are allowed) and reports each blocked URL on stderr. JavaScript, plugins and Java are disabled during rendering.
 - **Output is unredacted by design.** The generated PDF contains the complete record, including identifiers. Treat it with the same care as the source export.
 - **Intermediate files.** `--keep-html` writes unencrypted intermediate HTML and per-document PDFs to the directory you specify. Without that flag, intermediates go to a temporary directory that is deleted when conversion finishes.
 - **Do not commit patient data to this repository.** The test suite uses a synthetic fixture. To test against a real export, set `CDA2PDF_TEST_XDM` to a path outside the repo:

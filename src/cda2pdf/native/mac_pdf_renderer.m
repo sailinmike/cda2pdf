@@ -39,13 +39,59 @@
 }
 @end
 
+/*
+ * Blocks every network request made while rendering.
+ *
+ * Clinical documents are untrusted input. A CDA narrative, a vendor
+ * stylesheet, or a user-supplied stylesheet can emit a reference to a remote
+ * resource -- for example <img src="https://example.com/x.gif?mrn=...">.
+ * Without this delegate WebKit would dutifully fetch it, transmitting patient
+ * identifiers to a third party as a side effect of rendering a PDF.
+ *
+ * Only local resources are permitted: file: URLs, plus the about: and data:
+ * schemes WebKit uses internally. Everything else is dropped by returning nil
+ * from willSendRequest, and reported on stderr so the omission is visible
+ * rather than silent.
+ */
+@interface ResourceGuard : NSObject <WebResourceLoadDelegate>
+@property (nonatomic, assign) NSUInteger blockedCount;
+@end
+
+@implementation ResourceGuard
+- (NSURLRequest *)webView:(WebView *)sender
+                 resource:(id)identifier
+          willSendRequest:(NSURLRequest *)request
+         redirectResponse:(NSURLResponse *)redirectResponse
+           fromDataSource:(WebDataSource *)dataSource {
+    NSString *scheme = [[[request URL] scheme] lowercaseString];
+    if (scheme == nil
+        || [scheme isEqualToString:@"file"]
+        || [scheme isEqualToString:@"about"]
+        || [scheme isEqualToString:@"data"]) {
+        return request;
+    }
+    self.blockedCount += 1;
+    fprintf(stderr,
+            "cda2pdf: blocked non-local resource request during render: %s\n",
+            [[[request URL] absoluteString] UTF8String]);
+    return nil;
+}
+@end
+
 BOOL renderHTMLToPDF(NSString *htmlPath, NSString *pdfPath) {
     NSRect rect = NSMakeRect(0, 0, 820, 1050);
     WebView *webView = [[WebView alloc] initWithFrame:rect frameName:nil groupName:nil];
     LoadDelegate *del = [[LoadDelegate alloc] init];
     [webView setFrameLoadDelegate:del];
+    // Prevent rendering from reaching the network; see ResourceGuard above.
+    ResourceGuard *guard = [[ResourceGuard alloc] init];
+    [webView setResourceLoadDelegate:guard];
     [[webView preferences] setShouldPrintBackgrounds:YES];
     [[webView preferences] setLoadsImagesAutomatically:YES];
+    // Clinical documents are untrusted input; no scripting or plugins.
+    [[webView preferences] setJavaScriptEnabled:NO];
+    [[webView preferences] setPlugInsEnabled:NO];
+    [[webView preferences] setJavaEnabled:NO];
 
     NSURL *url = [NSURL fileURLWithPath:htmlPath];
     [[webView mainFrame] loadRequest:[NSURLRequest requestWithURL:url]];
