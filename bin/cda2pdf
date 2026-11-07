@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+# Copyright (C) 2026 cda2pdf contributors
+#
+# This file is part of cda2pdf.
+#
+# cda2pdf is free software: you can redistribute it and/or modify it under the
+# terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option) any
+# later version.
+#
+# cda2pdf is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Standalone executable entry point for cda2pdf."""
+
+import os
+import sys
+
+# Prepend ../src so this script works immediately even before `pip install -e .`
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_DIR = os.path.join(ROOT_DIR, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+from cda2pdf.cli import main
+
+if __name__ == "__main__":
+    sys.exit(main())

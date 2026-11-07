@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cda2pdf"
+version = "0.1.0"
+description = "Convert HL7 CDA R2 XML files and IHE XDM clinical packages into unabridged, bookmarked PDFs."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "AGPL-3.0-or-later" }
+keywords = ["hl7", "cda", "ccd", "ccda", "ihe", "xdm", "pdf", "healthcare", "interoperability"]
+dependencies = [
+    "beautifulsoup4>=4.11.0",
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Text Processing :: Markup :: XML",
+]
+
+[project.urls]
+Homepage = "https://github.com/<your-org>/cda2pdf"
+Repository = "https://github.com/<your-org>/cda2pdf"
+Issues = "https://github.com/<your-org>/cda2pdf/issues"
+
+[project.scripts]
+cda2pdf = "cda2pdf.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# The native renderer ships as SOURCE ONLY and is compiled on the user's
+# machine at first run; the compiled binary is never distributed.
+# No vendor stylesheets or branded images are bundled -- assets/STYLE contains
+# only the project's own clean-room CDA R2 stylesheet.
+cda2pdf = [
+    "assets/STYLE/*.xsl",
+    "native/*.m",
+]

@@ -1,0 +1,52 @@
+# --- Patient data: never commit PHI ---------------------------------------
+# Clinical exports and anything generated from them. The only CDA XML allowed
+# in this repo is the synthetic fixture under tests/fixtures/.
+XDM-*/
+XDM-*.zip
+*.XML
+*.xml
+!tests/fixtures/*.xml
+*.pdf
+INDEX.HTM
+README.TXT
+IHE_XDM/
+# Intermediate output from --keep-html
+keep-html/
+*_full.html
+raw_doc*.html
+part*.pdf
+_render_manifest.json
+_render_result.json
+_merged_stamped.pdf
+
+# --- Compiled native renderer (built on each developer's machine) ---------
+src/cda2pdf/native/cda2pdf_mac_renderer
+*.o
+*.dSYM/
+
+# --- Python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.tox/
+.nox/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Editors and OS -------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
