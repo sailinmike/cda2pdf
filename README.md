@@ -38,7 +38,7 @@ The native renderer (`src/cda2pdf/native/mac_pdf_renderer.m`) is **compiled on y
 ## Installation
 
 ```bash
-git clone https://github.com/<your-org>/cda2pdf.git
+git clone https://github.com/sailinmike/cda2pdf.git
 cd cda2pdf
 python3 -m venv .venv
 source .venv/bin/activate

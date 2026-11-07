@@ -54,7 +54,7 @@ The bundled `src/cda2pdf/assets/STYLE/cda-default.xsl` is original, clean-room w
 ## Development setup
 
 ```bash
-git clone https://github.com/<your-org>/cda2pdf.git
+git clone https://github.com/sailinmike/cda2pdf.git
 cd cda2pdf
 python3 -m venv .venv
 source .venv/bin/activate
